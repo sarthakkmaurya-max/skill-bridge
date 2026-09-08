@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production build
+dist/
+frontend/dist/
+
+# Environment variables & Secret Keys
+.env
+.env.*
+*.env
+backend/.env
+frontend/.env
+
+# Uploads & Temp
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
