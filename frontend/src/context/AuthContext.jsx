@@ -31,55 +31,52 @@ export function AuthProvider({ children }) {
     let subscription = null;
 
     async function initAuth() {
+      // Helper to process and store a valid Supabase/Google session
+      const processSession = (session) => {
+        if (session?.user && session?.access_token) {
+          const meta = session.user.user_metadata || {};
+          const isGoogle = session.user.app_metadata?.provider === 'google';
+          const savedRole = localStorage.getItem('skillbridge_oauth_role') || meta.role || 'student';
+          const supaUser = {
+            _id: session.user.id,
+            name: meta.full_name || meta.name || session.user.email.split('@')[0],
+            email: session.user.email,
+            role: savedRole,
+            college: meta.college || '',
+            company: meta.company || '',
+            avatar: meta.avatar_url || meta.picture || '',
+          };
+          setUser(supaUser);
+          setToken(session.access_token);
+          setAuthProvider(isGoogle ? 'google' : 'supabase');
+          localStorage.setItem('skillbridge_token', session.access_token);
+          localStorage.setItem('skillbridge_user', JSON.stringify(supaUser));
+          localStorage.setItem('skillbridge_auth_provider', isGoogle ? 'google' : 'supabase');
+          setLoading(false);
+
+          if (typeof window !== 'undefined' && window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token'))) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+          return true;
+        }
+        return false;
+      };
+
       // 1. Check Supabase Auth if configured
       if (isSupabaseConfigured() && supabase) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user && session?.access_token) {
-            const meta = session.user.user_metadata || {};
-            const isGoogle = session.user.app_metadata?.provider === 'google';
-            const supaUser = {
-              _id: session.user.id,
-              name: meta.full_name || meta.name || session.user.email.split('@')[0],
-              email: session.user.email,
-              role: meta.role || 'student',
-              college: meta.college || '',
-              company: meta.company || '',
-              avatar: meta.avatar_url || '',
-            };
-            setUser(supaUser);
-            setToken(session.access_token);
-            setAuthProvider(isGoogle ? 'google' : 'supabase');
-            localStorage.setItem('skillbridge_token', session.access_token);
-            localStorage.setItem('skillbridge_user', JSON.stringify(supaUser));
-            localStorage.setItem('skillbridge_auth_provider', isGoogle ? 'google' : 'supabase');
-            setLoading(false);
+          if (processSession(session)) {
             return;
           }
         } catch (supaErr) {
           console.warn('Supabase session check error:', supaErr);
         }
 
-        // Listen for Supabase session changes
+        // Listen for Supabase session changes (e.g. after Google OAuth redirect)
         const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
-          if (session?.user && session?.access_token) {
-            const meta = session.user.user_metadata || {};
-            const isGoogle = session.user.app_metadata?.provider === 'google';
-            const supaUser = {
-              _id: session.user.id,
-              name: meta.full_name || meta.name || session.user.email.split('@')[0],
-              email: session.user.email,
-              role: meta.role || 'student',
-              college: meta.college || '',
-              company: meta.company || '',
-              avatar: meta.avatar_url || '',
-            };
-            setUser(supaUser);
-            setToken(session.access_token);
-            setAuthProvider(isGoogle ? 'google' : 'supabase');
-            localStorage.setItem('skillbridge_token', session.access_token);
-            localStorage.setItem('skillbridge_user', JSON.stringify(supaUser));
-            localStorage.setItem('skillbridge_auth_provider', isGoogle ? 'google' : 'supabase');
+          if (processSession(session)) {
+            // Handled
           } else if (event === 'SIGNED_OUT') {
             setUser(null);
             setToken(null);
@@ -338,28 +335,16 @@ export function AuthProvider({ children }) {
   };
 
   /**
-   * Google OAuth Login with instant fallback Persona
+   * Direct Real Google OAuth Authentication via Supabase
    */
   const loginWithGoogle = async (role = 'student') => {
-    // High-fidelity instant Google Persona that works seamlessly everywhere
-    const targetPersona = DEMO_USERS[role] || DEMO_USERS.student;
-    const googleUser = {
-      _id: 'google_' + (targetPersona._id || Date.now()),
-      name: `${targetPersona.name} (Google)`,
-      email: `${role || 'user'}.google@gmail.com`,
-      role: role || 'student',
-      college: targetPersona.college || 'Institute of Advanced Technology',
-      company: targetPersona.company || '',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    };
-    const googleToken = 'google_jwt_token_' + Date.now();
-    localStorage.setItem('skillbridge_token', googleToken);
-    localStorage.setItem('skillbridge_user', JSON.stringify(googleUser));
-    localStorage.setItem('skillbridge_auth_provider', 'google');
-    setToken(googleToken);
-    setUser(googleUser);
-    setAuthProvider('google');
-    return googleUser;
+    if (isSupabaseConfigured() && supabase) {
+      if (role) {
+        localStorage.setItem('skillbridge_oauth_role', role);
+      }
+      return await supabaseSignInWithGoogle(role);
+    }
+    throw new Error('Supabase is not configured for Google OAuth.');
   };
 
   const logout = async () => {

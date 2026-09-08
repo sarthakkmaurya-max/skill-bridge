@@ -73,7 +73,11 @@ export const supabaseSignIn = async ({ email, password }) => {
  */
 export const supabaseSignInWithGoogle = async (role = 'student') => {
   if (!supabase) {
-    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env');
+    throw new Error('Supabase is not configured.');
+  }
+
+  if (role) {
+    localStorage.setItem('skillbridge_oauth_role', role);
   }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -82,7 +86,7 @@ export const supabaseSignInWithGoogle = async (role = 'student') => {
       redirectTo: window.location.origin,
       queryParams: {
         access_type: 'offline',
-        prompt: 'consent',
+        prompt: 'select_account',
       },
       data: {
         role: role || 'student',
