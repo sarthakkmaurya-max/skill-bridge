@@ -25,6 +25,22 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(localStorage.getItem('skillbridge_token'));
   const [authProvider, setAuthProvider] = useState(localStorage.getItem('skillbridge_auth_provider') || 'local');
   const [loading, setLoading] = useState(true);
+  const [oauthError, setOauthError] = useState('');
+
+  // Detect OAuth error callbacks from Google/Supabase in URL
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const errorMsg = urlParams.get('error_description') || hashParams.get('error_description') || urlParams.get('error');
+      if (errorMsg) {
+        const decoded = decodeURIComponent(errorMsg.replace(/\+/g, ' '));
+        console.warn('[Google OAuth Error]:', decoded);
+        setOauthError(decoded);
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  }, []);
 
   // Initialize Auth & restore session
   useEffect(() => {
@@ -404,6 +420,8 @@ export function AuthProvider({ children }) {
       quickDemoLogin,
       isSupabaseEnabled: isSupabaseConfigured(),
       authProvider,
+      oauthError,
+      setOauthError,
     }}>
       {children}
     </AuthContext.Provider>

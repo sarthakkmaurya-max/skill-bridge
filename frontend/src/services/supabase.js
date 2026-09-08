@@ -95,6 +95,9 @@ export const supabaseSignInWithGoogle = async (role = 'student') => {
   });
 
   if (error) throw error;
+  if (data?.url) {
+    window.location.href = data.url;
+  }
   return data;
 };
 
