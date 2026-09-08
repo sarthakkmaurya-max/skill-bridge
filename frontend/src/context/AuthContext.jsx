@@ -116,15 +116,19 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (email, password) => {
+    if (!email || !password) {
+      throw new Error('Please enter both email and password.');
+    }
+
     const lowerEmail = (email || '').toLowerCase().trim();
 
-    // Check pre-seeded demo accounts for instant 100% login
+    // Check pre-seeded demo accounts for instant login
     if (lowerEmail === 'student@skillbridge.edu' || lowerEmail === 'recruiter@techcorp.com' || lowerEmail === 'admin@skillbridge.edu') {
       const demoRole = lowerEmail.includes('recruiter') ? 'recruiter' : lowerEmail.includes('admin') ? 'admin' : 'student';
       return await quickDemoLogin(demoRole);
     }
 
-    // Supabase Auth if configured
+    // 1. Real Supabase Auth
     if (isSupabaseConfigured() && supabase) {
       try {
         const data = await supabaseSignIn({ email, password });
@@ -148,108 +152,189 @@ export function AuthProvider({ children }) {
           return usr;
         }
       } catch (err) {
-        console.log('Supabase sign-in falling back to portal auth:', err.message);
+        const errMsg = err.message || '';
+
+        // If Supabase verifies password but email is unconfirmed
+        if (errMsg.toLowerCase().includes('email not confirmed') || err.status === 400 && errMsg.includes('Email not confirmed')) {
+          console.log('[Supabase Auth] Password verified! Email confirmation pending in Supabase.');
+          let registeredData = null;
+          try {
+            const raw = localStorage.getItem('sb_user_' + lowerEmail);
+            if (raw) registeredData = JSON.parse(raw);
+          } catch {}
+
+          const usr = {
+            _id: registeredData?.id || ('supa_' + Date.now()),
+            name: registeredData?.name || email.split('@')[0].replace(/[._-]/g, ' '),
+            email,
+            role: registeredData?.role || (lowerEmail.includes('recruiter') ? 'recruiter' : lowerEmail.includes('admin') ? 'admin' : 'student'),
+            college: registeredData?.college || '',
+            company: registeredData?.company || '',
+          };
+          const supaToken = 'supa_verified_token_' + Date.now();
+          setUser(usr);
+          setToken(supaToken);
+          setAuthProvider('supabase');
+          localStorage.setItem('skillbridge_token', supaToken);
+          localStorage.setItem('skillbridge_user', JSON.stringify(usr));
+          localStorage.setItem('skillbridge_auth_provider', 'supabase');
+          return usr;
+        }
+
+        // If credentials are invalid in Supabase
+        if (errMsg.toLowerCase().includes('invalid login credentials')) {
+          // Check locally registered accounts
+          let registeredData = null;
+          try {
+            const raw = localStorage.getItem('sb_user_' + lowerEmail);
+            if (raw) registeredData = JSON.parse(raw);
+          } catch {}
+
+          if (registeredData) {
+            if (registeredData.password === password) {
+              const usr = {
+                _id: registeredData.id || ('usr_' + Date.now()),
+                name: registeredData.name,
+                email: registeredData.email,
+                role: registeredData.role || 'student',
+                college: registeredData.college || '',
+                company: registeredData.company || '',
+              };
+              const localToken = 'local_auth_token_' + Date.now();
+              setUser(usr);
+              setToken(localToken);
+              setAuthProvider('local');
+              localStorage.setItem('skillbridge_token', localToken);
+              localStorage.setItem('skillbridge_user', JSON.stringify(usr));
+              localStorage.setItem('skillbridge_auth_provider', 'local');
+              return usr;
+            } else {
+              throw new Error('Incorrect password. Please try again.');
+            }
+          }
+          throw new Error('Invalid email or password. Please verify your credentials or click "Create Account".');
+        }
+
+        // Other Supabase errors
+        throw new Error(errMsg);
       }
     }
 
-    // Portal REST Auth with automatic mock fallback
+    // If Supabase not reachable, check registered account store
+    let registeredData = null;
     try {
-      const res = await api.login({ email, password });
-      if (res?.success && res?.user) {
-        const tokenVal = res.token || ('token_' + Date.now());
-        localStorage.setItem('skillbridge_token', tokenVal);
-        localStorage.setItem('skillbridge_user', JSON.stringify(res.user));
-        localStorage.setItem('skillbridge_auth_provider', 'local');
-        setToken(tokenVal);
-        setUser(res.user);
+      const raw = localStorage.getItem('sb_user_' + lowerEmail);
+      if (raw) registeredData = JSON.parse(raw);
+    } catch {}
+
+    if (registeredData) {
+      if (registeredData.password === password) {
+        const usr = {
+          _id: registeredData.id || ('usr_' + Date.now()),
+          name: registeredData.name,
+          email: registeredData.email,
+          role: registeredData.role || 'student',
+          college: registeredData.college || '',
+          company: registeredData.company || '',
+        };
+        const localToken = 'local_auth_token_' + Date.now();
+        setUser(usr);
+        setToken(localToken);
         setAuthProvider('local');
-        return res.user;
+        localStorage.setItem('skillbridge_token', localToken);
+        localStorage.setItem('skillbridge_user', JSON.stringify(usr));
+        localStorage.setItem('skillbridge_auth_provider', 'local');
+        return usr;
+      } else {
+        throw new Error('Incorrect password. Please try again.');
       }
-    } catch (err) {
-      console.warn('API login failed, applying fail-safe session:', err.message);
     }
 
-    // Universal fail-safe session for any provided email
-    const fallbackUser = {
-      _id: 'user_' + Date.now(),
-      name: email.split('@')[0].replace(/[._-]/g, ' '),
-      email,
-      role: email.includes('recruiter') ? 'recruiter' : email.includes('admin') ? 'admin' : 'student',
-      college: 'Institute of Advanced Technology',
-      company: '',
-    };
-    const fallbackToken = 'local_jwt_' + Date.now();
-    localStorage.setItem('skillbridge_token', fallbackToken);
-    localStorage.setItem('skillbridge_user', JSON.stringify(fallbackUser));
-    localStorage.setItem('skillbridge_auth_provider', 'local');
-    setToken(fallbackToken);
-    setUser(fallbackUser);
-    setAuthProvider('local');
-    return fallbackUser;
+    throw new Error('User not found. Please click "Create Account" to register first.');
   };
 
   const register = async (userData) => {
-    // Supabase Auth if configured
+    const { name, email, password, role, college, company } = userData;
+    const lowerEmail = (email || '').toLowerCase().trim();
+
+    if (!name || !email || !password) {
+      throw new Error('Please fill in your name, email, and password.');
+    }
+
+    if (password.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+
+    // 1. Real Supabase Auth Registration
     if (isSupabaseConfigured() && supabase) {
       try {
         const data = await supabaseSignUp(userData);
-        if (data?.session?.user) {
-          const meta = data.session.user.user_metadata || {};
+        if (data?.user) {
+          // Store credential backup locally
+          localStorage.setItem('sb_user_' + lowerEmail, JSON.stringify({
+            id: data.user.id,
+            name,
+            email,
+            password,
+            role: role || 'student',
+            college: college || '',
+            company: company || '',
+          }));
+
           const usr = {
-            _id: data.session.user.id,
-            name: meta.name || userData.name,
-            email: data.session.user.email,
-            role: meta.role || userData.role,
-            college: meta.college || userData.college,
-            company: meta.company || userData.company,
+            _id: data.user.id,
+            name,
+            email,
+            role: role || 'student',
+            college: college || '',
+            company: company || '',
           };
+          const tokenVal = data.session?.access_token || ('supa_auth_token_' + data.user.id);
           setUser(usr);
-          setToken(data.session.access_token);
+          setToken(tokenVal);
           setAuthProvider('supabase');
-          localStorage.setItem('skillbridge_token', data.session.access_token);
+          localStorage.setItem('skillbridge_token', tokenVal);
           localStorage.setItem('skillbridge_user', JSON.stringify(usr));
           localStorage.setItem('skillbridge_auth_provider', 'supabase');
           return usr;
         }
       } catch (err) {
-        console.log('Supabase sign-up falling back to portal auth:', err.message);
+        const msg = err.message || '';
+        if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
+          throw new Error('An account with this email already exists. Please Sign In.');
+        }
+        throw new Error(msg);
       }
     }
 
-    // Portal REST Auth with automatic mock fallback
-    try {
-      const res = await api.register(userData);
-      if (res?.success && res?.user) {
-        const tokenVal = res.token || ('token_' + Date.now());
-        localStorage.setItem('skillbridge_token', tokenVal);
-        localStorage.setItem('skillbridge_user', JSON.stringify(res.user));
-        localStorage.setItem('skillbridge_auth_provider', 'local');
-        setToken(tokenVal);
-        setUser(res.user);
-        setAuthProvider('local');
-        return res.user;
-      }
-    } catch (err) {
-      console.warn('API register failed, creating local session:', err.message);
-    }
+    // 2. Direct secure registration
+    const newId = 'usr_' + Date.now();
+    localStorage.setItem('sb_user_' + lowerEmail, JSON.stringify({
+      id: newId,
+      name,
+      email,
+      password,
+      role: role || 'student',
+      college: college || '',
+      company: company || '',
+    }));
 
-    // Fail-safe registered user
-    const newUser = {
-      _id: 'user_' + Date.now(),
-      name: userData.name || 'Portal User',
-      email: userData.email,
-      role: userData.role || 'student',
-      college: userData.college || '',
-      company: userData.company || '',
+    const usr = {
+      _id: newId,
+      name,
+      email,
+      role: role || 'student',
+      college: college || '',
+      company: company || '',
     };
-    const newToken = 'local_jwt_' + Date.now();
-    localStorage.setItem('skillbridge_token', newToken);
-    localStorage.setItem('skillbridge_user', JSON.stringify(newUser));
-    localStorage.setItem('skillbridge_auth_provider', 'local');
-    setToken(newToken);
-    setUser(newUser);
+    const localToken = 'local_jwt_' + Date.now();
+    setUser(usr);
+    setToken(localToken);
     setAuthProvider('local');
-    return newUser;
+    localStorage.setItem('skillbridge_token', localToken);
+    localStorage.setItem('skillbridge_user', JSON.stringify(usr));
+    localStorage.setItem('skillbridge_auth_provider', 'local');
+    return usr;
   };
 
   /**

@@ -69,9 +69,24 @@ function getMockFallback(endpoint, options = {}) {
 
   // Student Profile
   if (endpoint.startsWith('/students/profile')) {
+    let customProfile = DEMO_PROFILE;
+    try {
+      const saved = localStorage.getItem('skillbridge_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u.name) {
+          customProfile = {
+            ...DEMO_PROFILE,
+            name: u.name,
+            email: u.email || DEMO_PROFILE.email,
+            college: u.college || DEMO_PROFILE.college,
+          };
+        }
+      }
+    } catch {}
     return {
       success: true,
-      profile: DEMO_PROFILE,
+      profile: customProfile,
       certificates: DEMO_CERTIFICATES,
       projects: DEMO_PROJECTS,
     };
