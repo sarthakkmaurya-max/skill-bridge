@@ -1,20 +1,33 @@
 {
-  "name": "skillbridge",
+  "name": "skillbridge-monorepo",
   "version": "1.0.0",
+  "private": true,
   "description": "SkillBridge — Academia–Industry Collaboration Portal",
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
   "scripts": {
-    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,cyan\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
-    "dev:backend": "npm run dev --prefix backend",
-    "dev:frontend": "npm run dev --prefix frontend",
-    "build": "npm run build --prefix frontend",
-    "start": "node backend/src/server.js",
-    "seed": "npm run seed --prefix backend",
-    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend"
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,cyan\" \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build": "npm run build --prefix client && npm run build --prefix server",
+    "build:client": "npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server"
   },
-  "keywords": ["skillbridge", "education", "recruitment", "career-readiness"],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "skillbridge",
+    "academia",
+    "industry",
+    "internships",
+    "placements",
+    "supabase",
+    "react",
+    "typescript"
+  ],
   "devDependencies": {
-    "concurrently": "^9.2.4"
+    "concurrently": "^9.1.2"
   }
 }
